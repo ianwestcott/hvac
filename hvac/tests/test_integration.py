@@ -18,13 +18,17 @@ def create_client(**kwargs):
 class IntegrationTest(TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.manager = util.ServerManager(config_path='test/vault-tls.hcl', client=create_client())
+        cls.manager = util.VaultServerManager(config_path='test/vault-tls.hcl', client=create_client())
         cls.manager.start()
         cls.manager.initialize()
         cls.manager.unseal()
 
+        cls.moto = util.MotoServerManager()
+        cls.moto.start()
+
     @classmethod
     def tearDownClass(cls):
+        cls.moto.stop()
         cls.manager.stop()
 
     def root_token(self):
@@ -581,7 +585,6 @@ class IntegrationTest(TestCase):
         # No roles, list_token_roles == None
         after = self.client.list_token_roles()
         assert not after
-
     def test_create_token_w_role(self):
         # Create policy
         self.prep_policy('testpolicy')
@@ -598,3 +601,15 @@ class IntegrationTest(TestCase):
         # Cleanup
         self.client.delete_token_role('testrole')
         self.client.delete_policy('testpolicy')
+
+    def prep_ec2_backend(self):
+        self.client.enable_auth_backend('aws-ec2')
+        self.client.create_vault_ec2_client_configuration(
+            'fakeaccesskey', 'fakesecretkey', self.moto.url)
+
+    # TODO replace this with more appropriate tests
+    def test_ec2_auth(self):
+        self.prep_ec2_backend()
+        config = self.client.get_vault_ec2_client_configuration()
+        assert config['data']['access_key'] == 'fakeaccesskey'
+        assert config['data']['secret_key'] == 'fakesecretkey'

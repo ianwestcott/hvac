@@ -1,10 +1,11 @@
 import re
 import subprocess
 import time
+import socket
 
 from semantic_version import Spec, Version
 
-class ServerManager(object):
+class VaultServerManager(object):
     def __init__(self, config_path, client):
         self.config_path = config_path
         self.client = client
@@ -50,6 +51,38 @@ class ServerManager(object):
 
     def unseal(self):
         self.client.unseal_multi(self.keys)
+
+
+class MotoServerManager(object):
+    def __init__(self):
+        self.host = '127.0.0.1'
+        self.port = 5009  # picked at random
+
+    def start(self):
+        command = ['moto_server', 'ec2', '-H', self.host, '-p' + str(self.port)]
+        self._process = subprocess.Popen(command,
+                                         stdout=subprocess.PIPE,
+                                         stderr=subprocess.PIPE)
+
+        attempts_left = 20
+        while attempts_left > 0:
+            sock = socket.socket()
+            result = sock.connect_ex((self.host, self.port))
+            sock.close()
+            if result == 0:
+                break
+            else:
+                print('Waiting for moto_server to start')
+                time.sleep(0.5)
+                attempts_left -= 1
+
+    def stop(self):
+        self._process.kill()
+
+    @property
+    def url(self):
+        return 'http://{}:{}'.format(self.host, self.port)
+
 
 VERSION_REGEX = re.compile('Vault v([\d\.]+)')
 
